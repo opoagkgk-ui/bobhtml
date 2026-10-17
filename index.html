@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BobMod Кейс</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg: #0f0f13; --card: #1c1c24; --border: #2a2a35; --red: #ff3333;
+            --white: #ffffff; --gray: #8b8b9a;
+            --p-lose: #23232b; --p-1d: #2d3748; --p-3d: #1e3a8a; --p-10d: #713f12; --p-30d: #4c1d95;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: -apple-system, sans-serif; }
+        body { background: var(--bg); color: var(--white); display: flex; flex-direction: column; align-items: center; height: 100vh; overflow: hidden; }
+        
+        .header { text-align: center; padding: 30px 20px 20px; }
+        h1 { font-size: 26px; font-weight: 900; letter-spacing: 1px; }
+        h1 span { color: var(--red); }
+        .subtitle { color: var(--gray); font-size: 14px; margin-top: 5px; }
+
+        .case-box {
+            position: relative; width: 100%; max-width: 500px; height: 160px;
+            background: #15151a; border-top: 2px solid var(--border); border-bottom: 2px solid var(--border);
+            overflow: hidden; display: flex; align-items: center; margin-top: 30px;
+            box-shadow: inset 0 0 30px rgba(0,0,0,0.9);
+        }
+        .pointer {
+            position: absolute; left: 50%; top: 0; bottom: 0; width: 3px;
+            background: var(--red); transform: translateX(-50%); z-index: 10;
+            box-shadow: 0 0 15px var(--red);
+        }
+        .fade-left, .fade-right {
+            position: absolute; top: 0; bottom: 0; width: 80px; z-index: 5; pointer-events: none;
+        }
+        .fade-left { left: 0; background: linear-gradient(to right, var(--bg), transparent); }
+        .fade-right { right: 0; background: linear-gradient(to left, var(--bg), transparent); }
+
+        .track { display: flex; align-items: center; position: absolute; left: 0; height: 100%; will-change: transform; }
+
+        .card {
+            width: 110px; height: 120px; margin: 0 5px; border-radius: 12px;
+            background: var(--card); border: 2px solid var(--border);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            flex-shrink: 0; position: relative; overflow: hidden;
+        }
+        .card::before { content: ''; position: absolute; inset: 0; opacity: 0.15; }
+        .card.lose::before { background: var(--p-lose); }
+        .card.d1::before { background: var(--p-1d); }
+        .card.d3::before { background: var(--p-3d); }
+        .card.d10::before { background: var(--p-10d); }
+        .card.d30::before { background: var(--p-30d); }
+
+        .icon { font-size: 40px; margin-bottom: 10px; z-index: 1; }
+        .text { font-size: 13px; font-weight: bold; z-index: 1; text-align: center; }
+        
+        .card.d1 .text { color: #e2e8f0; }
+        .card.d3 .text { color: #93c5fd; }
+        .card.d10 .text { color: #fde047; }
+        .card.d30 .text { color: #d8b4fe; }
+        .card.lose .text { color: var(--gray); }
+
+        .btn {
+            margin-top: 50px; padding: 18px 40px; border-radius: 14px; background: var(--red);
+            color: white; font-size: 18px; font-weight: 800; border: none; cursor: pointer;
+            box-shadow: 0 5px 20px rgba(255,51,51,0.4); transition: 0.2s; z-index: 20;
+        }
+        .btn:active { transform: scale(0.95); }
+        .btn:disabled { background: #333; color: #666; box-shadow: none; cursor: not-allowed; }
+
+        .status { margin-top: 20px; font-size: 14px; color: var(--gray); height: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1><span>BOB</span> MOD КЕЙС</h1>
+        <div class="subtitle">Испытай удачу</div>
+    </div>
+
+    <div class="case-box">
+        <div class="pointer"></div>
+        <div class="fade-left"></div>
+        <div class="fade-right"></div>
+        <div class="track" id="track"></div>
+    </div>
+
+    <button class="btn" id="spinBtn">Крутить</button>
+    <div class="status" id="status"></div>
+
+    <script>
+        window.onload = function() {
+            const tg = window.Telegram.WebApp;
+            tg.expand(); // Открыть на весь экран
+
+            const track = document.getElementById('track');
+            const spinBtn = document.getElementById('spinBtn');
+            const status = document.getElementById('status');
+            const box = document.querySelector('.case-box');
+
+            let isSpinning = false;
+
+            const PRIZES = [
+                { id: 'lose', icon: "📦", text: "Пусто", class: "lose", weight: 85, days: 0 },
+                { id: 'd1', icon: "🎟️", text: "1 день", class: "d1", weight: 10, days: 1 },
+                { id: 'd3', icon: "💎", text: "3 дня", class: "d3", weight: 4, days: 3 },
+                { id: 'd10', icon: "👑", text: "10 дней", class: "d10", weight: 0.9, days: 10 },
+                { id: 'd30', icon: "🏆", text: "30 дней", class: "d30", weight: 0.1, days: 30 }
+            ];
+
+            function createCard(prize) {
+                const card = document.createElement('div');
+                card.className = 'card ' + prize.class;
+                card.innerHTML = `<div class="icon">${prize.icon}</div><div class="text">${prize.text}</div>`;
+                return card;
+            }
+
+            function pickPrize() {
+                const rand = Math.random() * 100;
+                let sum = 0;
+                for (let i = 0; i < PRIZES.length; i++) {
+                    sum += PRIZES[i].weight;
+                    if (rand < sum) return PRIZES[i];
+                }
+                return PRIZES[0];
+            }
+
+            // Заполняем ленту
+            function initTrack() {
+                track.innerHTML = '';
+                for (let i = 0; i < 50; i++) {
+                    track.appendChild(createCard(pickPrize()));
+                }
+            }
+            initTrack();
+
+            spinBtn.onclick = function() {
+                if (isSpinning) return;
+                isSpinning = true;
+                spinBtn.disabled = true;
+                spinBtn.innerText = "Крутим...";
+                status.innerText = "";
+                tg.HapticFeedback.impactOccurred('heavy');
+
+                const winPrize = pickPrize();
+                const winIndex = 40;
+
+                track.innerHTML = '';
+                for (let i = 0; i < 50; i++) {
+                    if (i === winIndex) track.appendChild(createCard(winPrize));
+                    else track.appendChild(createCard(pickPrize()));
+                }
+
+                track.style.transition = 'none';
+                track.style.transform = 'translateX(0px)';
+
+                setTimeout(function() {
+                    const cardW = 120;
+                    const boxW = box.offsetWidth;
+                    const centerOffset = (boxW / 2) - (110 / 2);
+                    const randOffset = (Math.random() - 0.5) * 40;
+                    const endPos = -((winIndex * cardW) - centerOffset + randOffset);
+
+                    track.style.transition = 'transform 5s cubic-bezier(0.15, 0.85, 0.15, 1)';
+                    track.style.transform = `translateX(${endPos}px)`;
+
+                    setTimeout(function() {
+                        isSpinning = false;
+                        spinBtn.innerText = "Готово!";
+                        tg.HapticFeedback.notificationOccurred(winPrize.days > 0 ? 'success' : 'warning');
+
+                        // ОТПРАВЛЯЕМ ДАННЫЕ В БОТА
+                        // Передаем ID приза, чтобы бот знал, сколько дней начислить
+                        tg.sendData(JSON.stringify({ prize_id: winPrize.id, days: winPrize.days }));
+                        
+                        // Текст статуса, пока страница закрывается
+                        if (winPrize.days > 0) {
+                            status.innerText = `Вы выиграли ${winPrize.text}! Закрываем...`;
+                            status.style.color = "#fde047";
+                        } else {
+                            status.innerText = `Пусто. Попробуйте завтра!`;
+                            status.style.color = "var(--gray)";
+                        }
+                    }, 5200);
+                }, 50);
+            };
+        };
+    </script>
+</body>
+</html>
